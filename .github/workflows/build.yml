@@ -29,7 +29,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Install build dependencies
         run: |
@@ -60,7 +60,8 @@ jobs:
 
       - name: Configure
         run: |
-          cd openwrt-sdk-*
+          SDK_DIR=$(find . -maxdepth 1 -type d -name 'openwrt-sdk-*' | head -n 1)
+          cd "$SDK_DIR"
           echo "CONFIG_PACKAGE_educnt=m" >> .config
           [ -e package/feeds/educnt ] || echo "::warning title=feed::package/feeds/educnt missing"
           set +e
@@ -94,13 +95,14 @@ jobs:
 
       - name: Build package
         run: |
-          cd openwrt-sdk-*
+          SDK_DIR=$(find . -maxdepth 1 -type d -name 'openwrt-sdk-*' | head -n 1)
+          cd "$SDK_DIR"
           make package/educnt/compile V=s -j"$(nproc)"
 
       - name: Collect artifacts
         run: |
           mkdir -p out
-          find openwrt-sdk-* -path '*/bin/packages/*' \( -name '*.ipk' -o -name '*.apk' \) -exec cp {} out/ \;
+          find . -maxdepth 4 -path './openwrt-sdk-*/bin/packages/*' \( -name '*.ipk' -o -name '*.apk' \) -exec cp {} out/ \;
           ls -l out
 
       - name: Upload artifacts
