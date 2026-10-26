@@ -102,7 +102,7 @@ jobs:
       - name: Collect artifacts
         run: |
           mkdir -p out
-          find . -maxdepth 4 -path './openwrt-sdk-*/bin/packages/*' \( -name '*.ipk' -o -name '*.apk' \) -exec cp {} out/ \;
+          find . -type f -path './openwrt-sdk-*/bin/packages/*' \( -name '*.ipk' -o -name '*.apk' \) -exec cp {} out/ \;
           ls -l out
 
       - name: Upload artifacts
