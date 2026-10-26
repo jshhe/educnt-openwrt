@@ -12,7 +12,7 @@ on:
         default: "25.12.5"
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build:
@@ -29,7 +29,9 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - name: Install build dependencies
         run: |
@@ -51,47 +53,15 @@ jobs:
           cd "$SDK_DIR"
           cp feeds.conf.default feeds.conf 2>/dev/null || true
           echo "src-link educnt $GITHUB_WORKSPACE" >> feeds.conf
-          {
-            ./scripts/feeds update -a
-            ./scripts/feeds install -a
-            echo "--- package/feeds/educnt ---"
-            ls -l package/feeds/educnt 2>&1 || true
-          } 2>&1 | tee /tmp/feeds.log
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
 
       - name: Configure
         run: |
           SDK_DIR=$(find . -maxdepth 1 -type d -name 'openwrt-sdk-*' | head -n 1)
           cd "$SDK_DIR"
           echo "CONFIG_PACKAGE_educnt=m" >> .config
-          [ -e package/feeds/educnt ] || echo "::warning title=feed::package/feeds/educnt missing"
-          set +e
-          make defconfig V=s > /tmp/defconfig.log 2>&1
-          rc=$?
-          echo "defconfig rc=$rc"
-          tail -n 120 /tmp/defconfig.log
-          tail -n 40 /tmp/defconfig.log | while IFS= read -r l; do
-            echo "::error title=defconfig::$l"
-          done
-          {
-            echo "### defconfig rc=$rc"
-            echo '```'
-            tail -n 120 /tmp/defconfig.log
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
-          exit $rc
-
-      - name: Upload failure log
-        if: failure()
-        run: |
-          cd "$GITHUB_WORKSPACE"
-          cp /tmp/defconfig.log defconfig.log 2>/dev/null || echo "no defconfig log" > defconfig.log
-          cp /tmp/feeds.log feeds.log 2>/dev/null || true
-          git config user.name "ci-bot"
-          git config user.email "ci-bot@users.noreply.github.com"
-          git checkout -B ci-log
-          git add -f defconfig.log feeds.log 2>/dev/null || true
-          git commit -m "ci: failure log $GITHUB_RUN_ID" || true
-          git push -f origin ci-log
+          make defconfig
 
       - name: Build package
         run: |
@@ -106,7 +76,7 @@ jobs:
           ls -l out
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: educnt-${{ matrix.version }}
           path: out/*
@@ -121,11 +91,11 @@ jobs:
       contents: write
     steps:
       - name: Download artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: artifacts
 
       - name: Publish release assets
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: artifacts/**/*
