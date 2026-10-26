@@ -1,4 +1,4 @@
-name: build
+﻿name: build
 
 on:
   push:
@@ -12,7 +12,7 @@ on:
         default: "25.12.5"
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -30,8 +30,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          persist-credentials: false
 
       - name: Install build dependencies
         run: |
@@ -80,6 +78,19 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
           exit $rc
+
+      - name: Upload failure log
+        if: failure()
+        run: |
+          cd "$GITHUB_WORKSPACE"
+          cp /tmp/defconfig.log defconfig.log 2>/dev/null || echo "no defconfig log" > defconfig.log
+          cp /tmp/feeds.log feeds.log 2>/dev/null || true
+          git config user.name "ci-bot"
+          git config user.email "ci-bot@users.noreply.github.com"
+          git checkout -B ci-log
+          git add -f defconfig.log feeds.log 2>/dev/null || true
+          git commit -m "ci: failure log $GITHUB_RUN_ID" || true
+          git push -f origin ci-log
 
       - name: Build package
         run: |
