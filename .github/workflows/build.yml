@@ -64,11 +64,15 @@ jobs:
         run: |
           cd openwrt-sdk-*
           echo "CONFIG_PACKAGE_educnt=m" >> .config
+          [ -e package/feeds/educnt ] || echo "::warning title=feed::package/feeds/educnt missing"
           set +e
           make defconfig V=s > /tmp/defconfig.log 2>&1
           rc=$?
           echo "defconfig rc=$rc"
           tail -n 120 /tmp/defconfig.log
+          tail -n 40 /tmp/defconfig.log | while IFS= read -r l; do
+            echo "::error title=defconfig::$l"
+          done
           {
             echo "### defconfig rc=$rc"
             echo '```'
