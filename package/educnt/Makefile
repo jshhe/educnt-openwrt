@@ -1,6 +1,9 @@
 #
 # educnt - 海南大学校园网（深澜 SRUN）自动登录
 #
+# 本项目是 taffy123d/hainanu-auto-login 的 OpenWrt 重写版本：
+#   Upstream: https://github.com/taffy123d/hainanu-auto-login (ISC License)
+#
 # 这是一个纯脚本包：只依赖 curl 与系统自带的 ucode，
 # 不需要 Node.js / Chrome / Playwright。
 #
