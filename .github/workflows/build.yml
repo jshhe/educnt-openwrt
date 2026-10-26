@@ -45,9 +45,10 @@ jobs:
         run: |
           SDK_DIR=$(find . -maxdepth 1 -type d -name 'openwrt-sdk-*' | head -n 1)
           cd "$SDK_DIR"
+          cp feeds.conf.default feeds.conf 2>/dev/null || true
           echo "src-link educnt $GITHUB_WORKSPACE" >> feeds.conf
-          ./scripts/feeds update educnt
-          ./scripts/feeds install educnt
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
 
       - name: Configure
         run: |
