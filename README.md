@@ -159,7 +159,7 @@ get_challenge → srun_portal (login) → rad_user_info 确认
 
 **`获取 challenge 失败`**：该线路连门户都超时，通常是 MAC 在学校系统里的绑定掉了，去自助服务重新登记该 MAC。
 
-**`auth_info_error`**：门户前端可能升级了。附 `educnt -v login` 输出提 issue（调试日志已脱敏）。
+**`auth_info_error`**：门户前端可能升级了。附 `educnt -v login` 输出提 issue，或者自己去问AI（调试日志已脱敏）。
 
 **`E2620 / already online`**：IP 已在线（MAC 免认证常见），视为成功。
 
