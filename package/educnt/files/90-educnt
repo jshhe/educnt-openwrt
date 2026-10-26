@@ -1,0 +1,13 @@
+#!/bin/sh
+# mwan3 / netifd 每次拉起 WAN 后会重建 ipset 与策略路由，
+# 这里重新建立 educnt 需要的“门户流量按源 IP 分流”规则。
+
+[ "$ACTION" = "ifup" ] || exit 0
+
+case "$INTERFACE" in
+wan|wanb|wanc|wan6|wanb6|wanc6)
+	[ -x /usr/bin/educnt ] && /usr/bin/educnt routing >/dev/null 2>&1
+	;;
+esac
+
+exit 0

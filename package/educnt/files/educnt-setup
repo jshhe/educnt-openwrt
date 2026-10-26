@@ -1,0 +1,60 @@
+#!/bin/sh
+# 海南大学校园网自动登录 - 配置向导
+set -e
+
+CONF=/etc/educnt.conf
+TMP=/tmp/educnt.conf.$$
+
+printf '海南大学校园网自动登录 - 配置向导\n\n'
+
+printf '学号: '
+read -r USER
+if [ -z "$USER" ]; then
+	echo '学号不能为空'
+	exit 1
+fi
+
+printf '密码（输入时不回显）: '
+stty -echo 2>/dev/null || true
+read -r PASS
+stty echo 2>/dev/null || true
+printf '\n'
+if [ -z "$PASS" ]; then
+	echo '密码不能为空'
+	exit 1
+fi
+
+ESC_PASS=$(printf '%s' "$PASS" | sed "s/'/'\\\\''/g")
+
+# 自动识别多拨虚拟网卡（vwanb/vwanc/...），没有则只用 wan
+TARGETS='wan:wan'
+for dev in vwanb vwanc vwand wane wanf; do
+	if ip link show "$dev" >/dev/null 2>&1; then
+		TARGETS="$TARGETS ${dev#v}:$dev"
+	fi
+done
+
+umask 077
+cat > "$TMP" <<EOF
+# educnt 配置（本文件包含密码，权限应为 600）
+USERNAME='$USER'
+PASSWORD='$ESC_PASS'
+AC_ID='1'
+PORTAL='https://xyw.hainanu.edu.cn'
+DOMAIN=''
+TARGETS='$TARGETS'
+EOF
+
+mv "$TMP" "$CONF"
+chmod 600 "$CONF"
+
+printf '\n已保存到 %s\n' "$CONF"
+printf '认证线路: %s\n' "$TARGETS"
+
+if [ -x /etc/init.d/educnt ]; then
+	/etc/init.d/educnt enable 2>/dev/null || true
+	/etc/init.d/educnt restart 2>/dev/null || true
+	printf '后台服务已启动（每 30 分钟检查，每天 04:30 重认证）\n'
+fi
+
+printf '可手动验证：educnt status / educnt reauth\n'

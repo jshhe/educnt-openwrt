@@ -1,0 +1,2 @@
+#!/bin/sh
+exec ucode /usr/share/educnt/educnt.uc "$@"

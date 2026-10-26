@@ -1,0 +1,90 @@
+name: build
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "OpenWrt release to build against"
+        required: false
+        default: "25.12.5"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: OpenWrt ${{ matrix.version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - version: "24.10.4"
+            sdk: "openwrt-sdk-24.10.4-ramips-mt7621_gcc-13.3.0_musl.Linux-x86_64.tar.zst"
+          - version: "25.12.5"
+            sdk: "openwrt-sdk-25.12.5-ramips-mt7621_gcc-14.3.0_musl.Linux-x86_64.tar.zst"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential rsync zstd wget
+
+      - name: Download SDK
+        run: |
+          wget -q "https://downloads.openwrt.org/releases/${{ matrix.version }}/targets/ramips/mt7621/${{ matrix.sdk }}"
+          tar --zstd -xf "${{ matrix.sdk }}"
+
+      - name: Add feed and install package
+        run: |
+          SDK_DIR=$(find . -maxdepth 1 -type d -name 'openwrt-sdk-*' | head -n 1)
+          cd "$SDK_DIR"
+          echo "src-link educnt $GITHUB_WORKSPACE" >> feeds.conf
+          ./scripts/feeds update educnt
+          ./scripts/feeds install educnt
+
+      - name: Configure
+        run: |
+          cd openwrt-sdk-*
+          echo "CONFIG_PACKAGE_educnt=m" >> .config
+          make defconfig
+
+      - name: Build package
+        run: |
+          cd openwrt-sdk-*
+          make package/educnt/compile V=s -j"$(nproc)"
+
+      - name: Collect artifacts
+        run: |
+          mkdir -p out
+          find openwrt-sdk-* -path '*/bin/packages/*' \( -name '*.ipk' -o -name '*.apk' \) -exec cp {} out/ \;
+          ls -l out
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: educnt-${{ matrix.version }}
+          path: out/*
+          if-no-files-found: error
+
+  release:
+    name: Attach packages to release
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Publish release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/**/*

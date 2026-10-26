@@ -1,0 +1,32 @@
+#!/bin/sh
+sysctl -w net.ipv4.conf.wan.arp_ignore=1 >/dev/null 2>&1
+sysctl -w net.ipv4.conf.wan.arp_announce=2 >/dev/null 2>&1
+sysctl -w net.ipv4.conf.wan.rp_filter=2 >/dev/null 2>&1
+sysctl -w net.ipv4.conf.vwanb.arp_ignore=1 >/dev/null 2>&1
+sysctl -w net.ipv4.conf.vwanb.arp_announce=2 >/dev/null 2>&1
+sysctl -w net.ipv4.conf.vwanb.rp_filter=2 >/dev/null 2>&1
+sysctl -w net.ipv4.conf.vwanc.arp_ignore=1 >/dev/null 2>&1
+sysctl -w net.ipv4.conf.vwanc.arp_announce=2 >/dev/null 2>&1
+sysctl -w net.ipv4.conf.vwanc.rp_filter=2 >/dev/null 2>&1
+
+GW6=$(ip -6 route show default | awk '{for(i=1;i<=NF;i++) if($i=="via") {print $(i+1); exit}}')
+[ -z "$GW6" ] && GW6=$(ip -6 neigh show dev wan | awk '/router/{print $1; exit}')
+if [ -n "$GW6" ]; then
+    ip -6 route replace default via "$GW6" dev wan metric 510 2>/dev/null
+    ip -6 route replace default via "$GW6" dev vwanb metric 520 2>/dev/null
+    ip -6 route replace default via "$GW6" dev vwanc metric 530 2>/dev/null
+    ip -6 route replace default via "$GW6" dev wan metric 510 table 4 2>/dev/null
+    ip -6 route replace default via "$GW6" dev vwanb metric 520 table 5 2>/dev/null
+    ip -6 route replace default via "$GW6" dev vwanc metric 530 table 6 2>/dev/null
+fi
+
+# 校园网门户绕过 mwan3 改标 + 按源 IP 绑定对应 WAN 表（用于未在线 WAN 的认证请求）
+ipset add mwan3_custom_ipv4 210.37.41.66 -exist 2>/dev/null
+idx=0
+for dev in wan vwanb vwanc; do
+    idx=$((idx + 1))
+    pref=$((509 + idx))
+    ip4=$(ip -4 addr show dev "$dev" 2>/dev/null | sed -n 's/.*inet \([0-9.]*\)\/.*/\1/p' | head -n 1)
+    ip rule del pref "$pref" 2>/dev/null
+    [ -n "$ip4" ] && ip rule add from "$ip4" lookup "$idx" pref "$pref" 2>/dev/null
+done
