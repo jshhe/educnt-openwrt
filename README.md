@@ -146,11 +146,20 @@ get_challenge → srun_portal (login) → rad_user_info 确认
 
 ---
 
+## 安全
+
+- `PORTAL` 必须是 `https://`，脚本会拒绝 `http://`；curl 也加了 `--proto '=https'`
+- `/etc/educnt.conf` 权限 `600`，安装脚本会强制修正
+- `-v` 只打印接口和 URL，不打印 challenge / password / info
+- 日志 `/tmp/educnt.log` 权限 `600`
+
+---
+
 ## FAQ
 
 **`获取 challenge 失败`**：该线路连门户都超时，通常是 MAC 在学校系统里的绑定掉了，去自助服务重新登记该 MAC。
 
-**`auth_info_error`**：门户前端可能升级了。附 `educnt -v login` 输出（打码密码/challenge）提 issue。
+**`auth_info_error`**：门户前端可能升级了。附 `educnt -v login` 输出提 issue（调试日志已脱敏）。
 
 **`E2620 / already online`**：IP 已在线（MAC 免认证常见），视为成功。
 

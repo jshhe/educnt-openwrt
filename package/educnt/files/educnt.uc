@@ -1,4 +1,4 @@
-#!/usr/bin/ucode
+﻿#!/usr/bin/ucode
 // educnt - OpenWrt 校园网（深澜 SRUN）自动登录工具
 // 纯 ucode 实现，无 Node.js / 无浏览器依赖；仅需 curl 用于按网卡绑定源地址。
 //
@@ -32,7 +32,13 @@ function now_str() {
 function logmsg(level, msg) {
 	let line = sprintf('[%s] [%s] %s\n', now_str(), level, msg);
 	try {
-		let f = fs.open(LOG_PATH, 'a');
+		let st = fs.lstat(LOG_PATH);
+		if (st && st.type == 'link')
+			return;
+		fs.chmod(LOG_PATH, 384);
+	} catch (e) { }
+	try {
+		let f = fs.open(LOG_PATH, 'a', 384);
 		f.write(line);
 		f.close();
 	} catch (e) { }
@@ -52,6 +58,16 @@ function nz(v, fallback) {
 	if (v == null || v == '')
 		return fallback;
 	return v;
+}
+
+// 只允许 https，避免凭据材料走明文
+function portal_url(conf) {
+	let p = nz(conf.PORTAL, DEFAULT_PORTAL);
+	if (substr(p, 0, 8) != 'https://' || substr(p, 8, 1) == '-') {
+		logmsg('ERR', 'PORTAL 必须是以 https:// 开头的地址');
+		exit(2);
+	}
+	return p;
 }
 
 function json_escape(s) {
@@ -327,7 +343,7 @@ function b64_custom(bytes) {
 // ---------------------------------------------------------------- 网络
 
 function http_get(dev, url, params) {
-	let cmd = sprintf("curl -4 -sS --connect-timeout 5 --max-time %d --interface %s -G %s",
+	let cmd = sprintf("curl -4 -sS --proto '=https' --connect-timeout 5 --max-time %d --interface %s -G %s",
 		12, shellquote(dev), shellquote(url));
 	if (params) {
 		let ks = keys(params);
@@ -337,7 +353,7 @@ function http_get(dev, url, params) {
 		}
 	}
 	cmd += ' 2>/dev/null';
-	dbg('HTTP ' + cmd);
+	dbg(sprintf('HTTP %s %s', dev, url));
 	for (let attempt = 0; attempt < 3; attempt++) {
 		let p = fs.popen(cmd);
 		let out = p.read('all');
@@ -443,13 +459,17 @@ function get_challenge(dev, ip, username, portal) {
 		username: username,
 		ip: ip
 	});
-	dbg('challenge raw: ' + nz(raw, '(null)'));
 	let r = unwrap_jsonp(raw);
 	if (r == null)
 		return null;
 	if (r.error && r.error != 'ok')
 		return null;
-	return r.challenge;
+	let ch = r.challenge;
+	// challenge 必须是 16~128 位的非空字符串，避免门户异常时退化成空密钥
+	if (ch == null || length(ch) < 16 || length(ch) > 128)
+		return null;
+	dbg(sprintf('%s challenge 长度 %d', dev, length(ch)));
+	return ch;
 }
 
 function do_login(conf, target) {
@@ -463,14 +483,13 @@ function do_login(conf, target) {
 	let username = conf.USERNAME + nz(conf.DOMAIN, '');
 	let password = conf.PASSWORD;
 	let acid = nz(conf.AC_ID, '1');
-	let portal = nz(conf.PORTAL, DEFAULT_PORTAL);
+	let portal = portal_url(conf);
 
 	let challenge = get_challenge(dev, ip, username, portal);
 	if (challenge == null) {
 		logmsg('ERR', sprintf('%s 获取 challenge 失败（网络不通或被拦截）', iface));
 		return false;
 	}
-	dbg(sprintf('%s challenge=%s', iface, challenge));
 
 	let hmd5 = hmac_md5_hex(challenge, password);
 	// 与浏览器 JSON.stringify 完全一致的紧凑 JSON（注意 acid 在 Portal.js 里是字符串，例如 "1"）
@@ -534,7 +553,7 @@ function do_logout(conf, target) {
 		return false;
 	let username = conf.USERNAME + nz(conf.DOMAIN, '');
 	let acid = nz(conf.AC_ID, '1');
-	let portal = nz(conf.PORTAL, DEFAULT_PORTAL);
+	let portal = portal_url(conf);
 
 	let resp = unwrap_jsonp(http_get(dev, portal + '/cgi-bin/srun_portal', {
 		callback: 'cb',
@@ -563,7 +582,7 @@ function do_status(conf, target) {
 		logmsg('WARN', sprintf('%s(%s) 无 IPv4 地址', iface, dev));
 		return;
 	}
-	let portal = nz(conf.PORTAL, DEFAULT_PORTAL);
+	let portal = portal_url(conf);
 	let r = unwrap_jsonp(http_get(dev, portal + '/cgi-bin/rad_user_info', { callback: 'cb' }));
 	if (r == null) {
 		logmsg('WARN', sprintf('%s (%s) 查询失败/未认证', iface, ip));
@@ -616,7 +635,7 @@ function do_check(conf, target) {
 	let ip = iface_ip(dev);
 	if (ip == null)
 		return false;
-	let portal = nz(conf.PORTAL, DEFAULT_PORTAL);
+	let portal = portal_url(conf);
 	let r = unwrap_jsonp(http_get(dev, portal + '/cgi-bin/rad_user_info', { callback: 'cb' }));
 	if (r != null && r.error == 'ok')
 		return true;
@@ -720,7 +739,7 @@ function main() {
 	}
 
 	let all = parse_targets(conf);
-	ensure_routing(all, nz(conf.PORTAL, DEFAULT_PORTAL));
+	ensure_routing(all, portal_url(conf));
 	if (action == 'routing') {
 		logmsg('INFO', '门户路由规则已重建');
 		exit(0);

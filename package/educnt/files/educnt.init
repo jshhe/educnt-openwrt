@@ -7,7 +7,10 @@ STOP=10
 start_service() {
 	# 未配置账号时不启动，避免每 30 分钟刷错误日志
 	[ -f /etc/educnt.conf ] || return 0
-	. /etc/educnt.conf 2>/dev/null
+
+	# 只做取值，不 source，避免配置被篡改时以 root 执行任意代码
+	USERNAME=$(sed -n "s/^USERNAME='\(.*\)'$/\1/p" /etc/educnt.conf | head -n 1)
+	PASSWORD=$(sed -n "s/^PASSWORD='\(.*\)'$/\1/p" /etc/educnt.conf | head -n 1)
 
 	[ -n "$USERNAME" ] || {
 		logger -t educnt "未配置账号，服务未启动（请运行 educnt-setup）"

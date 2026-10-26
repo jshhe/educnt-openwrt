@@ -3,7 +3,6 @@
 set -e
 
 CONF=/etc/educnt.conf
-TMP=/tmp/educnt.conf.$$
 
 printf '海南大学校园网自动登录 - 配置向导\n\n'
 
@@ -25,6 +24,7 @@ if [ -z "$PASS" ]; then
 fi
 
 ESC_PASS=$(printf '%s' "$PASS" | sed "s/'/'\\\\''/g")
+ESC_USER=$(printf '%s' "$USER" | sed "s/'/'\\\\''/g")
 
 # 自动识别多拨虚拟网卡（vwanb/vwanc/...），没有则只用 wan
 TARGETS='wan:wan'
@@ -35,9 +35,15 @@ for dev in vwanb vwanc vwand wane wanf; do
 done
 
 umask 077
+TMP=$(mktemp /etc/.educnt.XXXXXX) || {
+	echo '创建临时文件失败'
+	exit 1
+}
+trap 'rm -f "$TMP"' EXIT
+
 cat > "$TMP" <<EOF
 # educnt 配置（本文件包含密码，权限应为 600）
-USERNAME='$USER'
+USERNAME='$ESC_USER'
 PASSWORD='$ESC_PASS'
 AC_ID='1'
 PORTAL='https://xyw.hainanu.edu.cn'
@@ -46,6 +52,7 @@ TARGETS='$TARGETS'
 EOF
 
 mv "$TMP" "$CONF"
+trap - EXIT
 chmod 600 "$CONF"
 
 printf '\n已保存到 %s\n' "$CONF"

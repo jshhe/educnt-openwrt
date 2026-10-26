@@ -10,7 +10,7 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=educnt
-PKG_VERSION:=1.0.0
+PKG_VERSION:=1.0.1
 PKG_RELEASE:=1
 
 PKG_LICENSE:=MIT
@@ -67,6 +67,8 @@ endef
 define Package/educnt/postinst
 #!/bin/sh
 [ -n "$${IPKG_INSTROOT}" ] || {
+	chmod 600 /etc/educnt.conf 2>/dev/null
+	chown root:root /etc/educnt.conf 2>/dev/null
 	/etc/init.d/educnt enable
 }
 exit 0
