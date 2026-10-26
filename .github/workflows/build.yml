@@ -53,14 +53,29 @@ jobs:
           cd "$SDK_DIR"
           cp feeds.conf.default feeds.conf 2>/dev/null || true
           echo "src-link educnt $GITHUB_WORKSPACE" >> feeds.conf
-          ./scripts/feeds update -a
-          ./scripts/feeds install -a
+          {
+            ./scripts/feeds update -a
+            ./scripts/feeds install -a
+            echo "--- package/feeds/educnt ---"
+            ls -l package/feeds/educnt 2>&1 || true
+          } 2>&1 | tee /tmp/feeds.log
 
       - name: Configure
         run: |
           cd openwrt-sdk-*
           echo "CONFIG_PACKAGE_educnt=m" >> .config
-          make defconfig
+          set +e
+          make defconfig V=s > /tmp/defconfig.log 2>&1
+          rc=$?
+          echo "defconfig rc=$rc"
+          tail -n 120 /tmp/defconfig.log
+          {
+            echo "### defconfig rc=$rc"
+            echo '```'
+            tail -n 120 /tmp/defconfig.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit $rc
 
       - name: Build package
         run: |
