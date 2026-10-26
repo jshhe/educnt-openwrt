@@ -14,7 +14,7 @@ PKG_VERSION:=1.0.0
 PKG_RELEASE:=1
 
 PKG_LICENSE:=MIT
-PKG_MAINTAINER:=taffy123d
+PKG_MAINTAINER:=jshhe
 
 PKGARCH:=all
 
@@ -24,7 +24,7 @@ define Package/educnt
   SECTION:=net
   CATEGORY:=Network
   TITLE:=Hainan University campus network (SRUN) auto login
-  URL:=https://github.com/taffy123d/educnt-openwrt
+  URL:=https://github.com/jshhe/educnt-openwrt
   DEPENDS:=+curl +ucode
 endef
 
