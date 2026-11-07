@@ -6,6 +6,7 @@
 
 > **测试范围**：只在 OpenWrt 25.12.5（Xiaomi Mi Router 3G，ramips/mt7621）上实测。
 > 理论上任何 Linux 只要装上 `ucode` 和 `curl` 都能跑，但 OpenWrt 之外的发行版**未测试**（init 脚本和 hotplug 路径是按 OpenWrt 写的）。
+> 补充一下，在小米be3600（rd15）上进行了实测，（op18.06）也可以运行
 
 ---
 
