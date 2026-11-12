@@ -26,8 +26,11 @@
 
 | 依赖 | 说明 |
 |---|---|
-| `curl` | 唯一需要安装的包 |
+| `curl` | 唯一的 HTTP 客户端 |
 | `ucode` | OpenWrt 自带；其他 Linux 需自行编译 [jow-/ucode](https://github.com/jow-/ucode)，未测试 |
+| `ucode-mod-fs` | `require('fs')` 需要；OpenWrt 默认镜像通常已带 |
+| `ucode-mod-digest` | `require('digest')` 用于 SHA-1；不是所有镜像默认安装，包依赖会自动拉取 |
+| `openssl`（可选） | 没有 `ucode-mod-digest` 时的 SHA-1 fallback；需要 `openssl dgst` |
 
 ---
 
@@ -49,6 +52,8 @@ make defconfig && make package/educnt/compile V=s
 ### 或者手动部署
 
 ```sh
+opkg install ucode-mod-fs ucode-mod-digest
+
 install -Dm755 package/educnt/files/educnt       /usr/bin/educnt
 install -Dm755 package/educnt/files/educnt-setup /usr/bin/educnt-setup
 install -Dm755 package/educnt/files/educnt.uc    /usr/share/educnt/educnt.uc
@@ -59,6 +64,10 @@ install -Dm600 package/educnt/files/educnt.conf  /etc/educnt.conf
 
 /etc/init.d/educnt enable
 ```
+
+> 小米等厂商固件可能把 `/etc` 挂成 ramfs，重启后写入丢失。这类设备不要把 educnt 装到
+> `/usr` 或 `/etc/init.d`：把代码放到持久分区（如 `/data/educnt`），在 wrapper 里
+> `export EDUCNT_CONF=/data/educnt/educnt.conf`，并用持久化的 cron 或开机脚本拉起 daemon。
 
 ---
 
@@ -87,6 +96,12 @@ TARGETS='wan:wan wanb:vwanb wanc:vwanc'
 | `DOMAIN` | 账号后缀，没有就留空 |
 | `TARGETS` | `逻辑名:设备名`，单 WAN 写 `wan:wan` |
 
+默认配置路径是 `/etc/educnt.conf`；自定义部署可以用环境变量覆盖：
+
+```sh
+EDUCNT_CONF=/data/educnt/educnt.conf educnt status
+```
+
 ---
 
 ## 命令
@@ -98,7 +113,7 @@ educnt [选项] <命令> [线路]
   logout [线路]   注销
   reauth [线路]   逐条 注销 → 登录 → 确认在线
   check  [线路]   仅掉线时补登录
-  status [线路]   查看状态（无需账号密码）
+  status [线路]   查看状态（无需账号密码；任一线路不在线时退出码为 1）
   routing         重建门户分流路由（hotplug 调用）
 
   -h, --help      帮助
@@ -113,7 +128,7 @@ educnt [选项] <命令> [线路]
 
 安装后由 procd 服务托管，无需配置 cron：
 
-- 启动时 + 每 30 分钟：`educnt check`
+- 启动时 + 每 30 分钟：`educnt check`；失败后 1 分钟重试，最多 5 次（应对刚开机 WAN 未就绪）
 - 每天 04:30–04:59：`educnt reauth`
 - 进程异常退出：自动重启
 

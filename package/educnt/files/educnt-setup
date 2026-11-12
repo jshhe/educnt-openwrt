@@ -2,7 +2,7 @@
 # 海南大学校园网自动登录 - 配置向导
 set -e
 
-CONF=/etc/educnt.conf
+CONF="${EDUCNT_CONF:-/etc/educnt.conf}"
 
 printf '海南大学校园网自动登录 - 配置向导\n\n'
 

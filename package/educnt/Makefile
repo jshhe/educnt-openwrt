@@ -11,7 +11,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=educnt
 PKG_VERSION:=1.0.1
-PKG_RELEASE:=1
+PKG_RELEASE:=2
 
 PKG_LICENSE:=MIT
 PKG_MAINTAINER:=jshhe
@@ -25,7 +25,7 @@ define Package/educnt
   CATEGORY:=Network
   TITLE:=Hainan University campus network (SRUN) auto login
   URL:=https://github.com/jshhe/educnt-openwrt
-  DEPENDS:=+curl +ucode
+  DEPENDS:=+curl +ucode +ucode-mod-fs +ucode-mod-digest
 endef
 
 define Package/educnt/description
@@ -70,6 +70,8 @@ define Package/educnt/postinst
 	chmod 600 /etc/educnt.conf 2>/dev/null
 	chown root:root /etc/educnt.conf 2>/dev/null
 	/etc/init.d/educnt enable
+	# 升级时 prerm 已经 stop 过，这里重新拉起；未配置账号时 start_service 会直接返回
+	/etc/init.d/educnt restart 2>/dev/null
 }
 exit 0
 endef

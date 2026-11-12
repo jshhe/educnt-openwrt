@@ -1,4 +1,4 @@
-﻿#!/usr/bin/ucode
+#!/usr/bin/ucode
 // educnt - OpenWrt 校园网（深澜 SRUN）自动登录工具
 // 纯 ucode 实现，无 Node.js / 无浏览器依赖；仅需 curl 用于按网卡绑定源地址。
 //
@@ -13,9 +13,14 @@
 'use strict';
 
 let fs = require('fs');
-let digest = require('digest');
+let digest = null;
+try {
+	digest = require('digest');
+} catch (e) {
+	// OpenWrt 标准镜像通过 ucode-mod-digest 提供；精简运行时可退回 openssl
+}
 
-const CONF_PATH = '/etc/educnt.conf';
+const CONF_PATH = getenv('EDUCNT_CONF') || '/etc/educnt.conf';
 const LOG_PATH = '/tmp/educnt.log';
 const DEFAULT_PORTAL = 'https://xyw.hainanu.edu.cn';
 
@@ -52,6 +57,21 @@ function dbg(msg) {
 
 function shellquote(s) {
 	return "'" + replace('' + s, "'", "'\\''") + "'";
+}
+
+function sha1_hex(s) {
+	if (digest)
+		return digest.sha1(s);
+
+	// 没有 ucode-mod-digest 时的兼容路径（需要 openssl 命令）
+	let p = fs.popen("printf %s " + shellquote(s) +
+		" | openssl dgst -sha1 2>/dev/null | sed 's/^.*= //'");
+	let out = p.read('all');
+	p.close();
+	out = (out == null) ? '' : trim(out);
+	if (out == '')
+		logmsg('ERR', '缺少 digest 模块，且 openssl dgst -sha1 不可用');
+	return out;
 }
 
 function nz(v, fallback) {
@@ -107,8 +127,12 @@ function load_conf() {
 		let val = trim(substr(line, pos + 1));
 		if (length(val) >= 2) {
 			let q = substr(val, 0, 1);
-			if ((q == "'" || q == '"') && substr(val, length(val) - 1, 1) == q)
+			if ((q == "'" || q == '"') && substr(val, length(val) - 1, 1) == q) {
 				val = substr(val, 1, length(val) - 2);
+				// educnt-setup 按 shell 单引号规则写入：'a'\''b'
+				if (q == "'")
+					val = replace(val, "'\\''", "'");
+			}
 		}
 		conf[key] = val;
 	}
@@ -361,7 +385,7 @@ function http_get(dev, url, params) {
 		if (rc == 0 && out != null && out != '')
 			return out;
 		dbg(sprintf('HTTP 第 %d 次失败 (rc=%s)，重试', attempt + 1, rc));
-		sleep(2);
+		sleep(2000);
 	}
 	return null;
 }
@@ -422,8 +446,10 @@ function ensure_routing(targets, portal) {
 			let l = trim(lines[i]);
 			if (substr(l, 0, 5) == 'Name:')
 				seen_name = true;
-			else if (seen_name && substr(l, 0, 8) == 'Address:') {
-				let a = trim(substr(l, 8));
+			else if (seen_name && match(l, /^Address( [0-9]+)?:/)) {
+				// BusyBox big resolver: "Address: 1.2.3.4"
+				// 小号 BusyBox / bind-utils: "Address 1: 1.2.3.4"
+				let a = trim(substr(l, index(l, ':') + 1));
 				if (index(a, ':') < 0 && index(a, '.') >= 0)
 					push(portal_ips, a);
 			}
@@ -436,13 +462,26 @@ function ensure_routing(targets, portal) {
 		h.close();
 	}
 
-	// 为每条线路建立高优先级源地址策略路由（pref 510+i -> table i+1）
+	// 为每条线路建立高优先级源地址策略路由（pref 510+i）
+	// 不再假设 table = i+1，而是按设备名在 mwan3 的 table 1..16 中查找
 	for (let i = 0; i < length(targets); i++) {
-		let ip = iface_ip(targets[i].dev);
+		let dev = targets[i].dev;
+		let ip = iface_ip(dev);
 		if (ip == null)
 			continue;
+		let tbl = null;
+		for (let t = 1; t <= 16; t++) {
+			let q = fs.popen(sprintf('ip -4 route show table %d 2>/dev/null | grep -q %s',
+				t, shellquote('dev ' + dev)));
+			q.read('all');
+			if (q.close() == 0) {
+				tbl = t;
+				break;
+			}
+		}
+		if (tbl == null)
+			continue;
 		let pref = 510 + i;
-		let tbl = i + 1;
 		let cmd = sprintf('ip rule del pref %d 2>/dev/null; ip rule add from %s lookup %d pref %d 2>/dev/null',
 			pref, shellquote(ip), tbl, pref);
 		let h = fs.popen(cmd);
@@ -501,7 +540,7 @@ function do_login(conf, target) {
 	let n = '200', type = '1';
 	let chk = challenge + username + challenge + hmd5 + challenge + acid +
 		challenge + ip + challenge + n + challenge + type + challenge + info;
-	let chksum = digest.sha1(chk);
+	let chksum = sha1_hex(chk);
 
 	let resp = unwrap_jsonp(http_get(dev, portal + '/cgi-bin/srun_portal', {
 		callback: 'cb',
@@ -566,7 +605,7 @@ function do_logout(conf, target) {
 		logmsg('ERR', sprintf('%s 注销请求无响应', iface));
 		return false;
 	}
-	if (resp.error == 'ok') {
+	if (resp.error == 'ok' || resp.suc_msg == 'logout_ok') {
 		logmsg('OK', sprintf('%s (%s) 注销成功', iface, ip));
 		return true;
 	}
@@ -580,20 +619,22 @@ function do_status(conf, target) {
 	let ip = iface_ip(dev);
 	if (ip == null) {
 		logmsg('WARN', sprintf('%s(%s) 无 IPv4 地址', iface, dev));
-		return;
+		return false;
 	}
 	let portal = portal_url(conf);
 	let r = unwrap_jsonp(http_get(dev, portal + '/cgi-bin/rad_user_info', { callback: 'cb' }));
 	if (r == null) {
 		logmsg('WARN', sprintf('%s (%s) 查询失败/未认证', iface, ip));
-		return;
+		return false;
 	}
 	if (r.error == 'ok') {
 		let bytes = (r.all_bytes != null) ? r.all_bytes : ((r.sum_bytes != null) ? r.sum_bytes : '?');
 		logmsg('INFO', sprintf('%s (%s) 在线  流量=%s  在线设备=%s',
 			iface, ip, bytes, nz(r.online_device_total, '?')));
+		return true;
 	} else {
 		logmsg('WARN', sprintf('%s (%s) 未在线 (%s)', iface, ip, r.error));
+		return false;
 	}
 }
 
@@ -627,7 +668,7 @@ const HELP_TEXT = join('\n', [
 	'  educnt check           掉线才登录',
 	'  educnt status          查看状态',
 	'',
-	'配置: /etc/educnt.conf    日志: /tmp/educnt.log'
+	'配置: ' + CONF_PATH + '    日志: ' + LOG_PATH
 ]);
 
 function do_check(conf, target) {
@@ -645,7 +686,7 @@ function do_check(conf, target) {
 
 function verify_online(conf, target, tries) {
 	for (let i = 0; i < tries; i++) {
-		sleep(2);
+		sleep(2000);
 		if (do_check(conf, target))
 			return true;
 		dbg(sprintf('%s 第 %d 次在线确认未通过', target.iface, i + 1));
@@ -655,7 +696,7 @@ function verify_online(conf, target, tries) {
 
 function wait_offline(conf, target, tries) {
 	for (let i = 0; i < tries; i++) {
-		sleep(2);
+		sleep(2000);
 		if (!do_check(conf, target))
 			return true;
 	}
@@ -670,7 +711,7 @@ function do_reauth(conf, target) {
 			logmsg('OK', sprintf('%s 重认证完成并确认在线', target.iface));
 			return true;
 		}
-		sleep(2);
+		sleep(2000);
 	}
 	logmsg('ERR', sprintf('%s 重认证后仍未确认在线', target.iface));
 	return false;
@@ -759,8 +800,7 @@ function main() {
 		let t = targets[i];
 		let r = false;
 		if (action == 'status') {
-			do_status(conf, t);
-			r = true;
+			r = do_status(conf, t);
 		} else if (action == 'logout') {
 			r = do_logout(conf, t);
 		} else if (action == 'reauth') {
@@ -778,7 +818,7 @@ function main() {
 		}
 		if (r) ok++; else fail++;
 		if (i + 1 < length(targets))
-			sleep(2);
+			sleep(2000);
 	}
 
 	if (action != 'status')

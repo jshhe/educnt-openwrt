@@ -1,15 +1,11 @@
-﻿name: build
+name: build
 
 on:
   push:
     branches: [main, master]
+    tags: ['v*']
   pull_request:
   workflow_dispatch:
-    inputs:
-      version:
-        description: "OpenWrt release to build against"
-        required: false
-        default: "25.12.5"
 
 permissions:
   contents: read
@@ -32,6 +28,21 @@ jobs:
         uses: actions/checkout@v7
         with:
           persist-credentials: false
+
+      - name: Lint scripts
+        run: |
+          set -e
+          if head -c 3 package/educnt/files/educnt.uc | od -An -tx1 | grep -qi 'ef bb bf'; then
+            echo "::error file=package/educnt/files/educnt.uc::UTF-8 BOM detected"
+            exit 1
+          fi
+          for f in package/educnt/files/90-educnt \
+                   package/educnt/files/daemon.sh \
+                   package/educnt/files/educnt \
+                   package/educnt/files/educnt-setup \
+                   package/educnt/files/educnt.init; do
+            sh -n "$f"
+          done
 
       - name: Install build dependencies
         run: |
